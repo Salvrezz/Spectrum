@@ -10,7 +10,7 @@ def get_engine():
     port = os.getenv("DB_PORT", "3306")
     user = os.getenv("DB_USER", "root")
     password = os.getenv("DB_PASSWORD", "")
-    db = os.getenv("DB_NAME", "spectrum_db")
+    db = os.getenv("DB_NAME", "")
 
     url = f"mysql+pymysql://{user}:{password}@{host}:{port}/{db}"
     engine = create_engine(url, echo=False)

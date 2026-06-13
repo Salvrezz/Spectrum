@@ -1,101 +1,112 @@
--- =============================================================
--- create_tables.sql
--- Run this ONCE in MySQL Workbench (or via main.py --setup)
--- to create the spectrum_db schema and three staging tables.
--- =============================================================
-
--- 1. Create database if it doesn't exist
-CREATE DATABASE IF NOT EXISTS spectrum_db
-    CHARACTER SET utf8mb4
-    COLLATE utf8mb4_unicode_ci;
-
+-- sql/create_tables.sql
+--
+-- This file is for DOCUMENTATION / first-time setup only.
+-- etl/load.py uses pandas to_sql(if_exists="replace"), which will create
+-- (and recreate) these tables automatically on every run. You do NOT need
+-- to run this file for the pipeline to work — it's here so you (and Power
+-- BI users) can see the shape of each table at a glance, and so you can
+-- run it once manually if you prefer to pre-create the schema with your
+-- own data types/indexes.
+ 
+CREATE DATABASE IF NOT EXISTS spectrum_db;
 USE spectrum_db;
-
-
--- =============================================================
--- 2. STAGING: Products
--- =============================================================
-DROP TABLE IF EXISTS stg_products;
-
-CREATE TABLE stg_products (
-    id                  INT             AUTO_INCREMENT PRIMARY KEY,
-    product_no          VARCHAR(50)     NOT NULL,
-    sku_no              VARCHAR(50),
-    product_name        VARCHAR(255)    NOT NULL,
-    category            VARCHAR(100),
-    brand               VARCHAR(150),
-    has_specifications  CHAR(1)         COMMENT 'Y or N',
-    has_serial_no       CHAR(1)         COMMENT 'Y or N',
-    unit_of_measure     VARCHAR(20),
-    purchase_tax_rate   DECIMAL(6,2),
-    sale_tax_rate       DECIMAL(6,2),
-    purchase_price      DECIMAL(30,2),
-    wholesale_price     DECIMAL(30,2),
-    retail_price        DECIMAL(30,2),
-    loaded_at           TIMESTAMP       DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-
-    UNIQUE KEY uq_product_no (product_no),
-    INDEX idx_category   (category),
-    INDEX idx_brand      (brand)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
-
--- =============================================================
--- 3. STAGING: Sales
--- =============================================================
-DROP TABLE IF EXISTS stg_sales;
-
-CREATE TABLE stg_sales (
-    id                  BIGINT          AUTO_INCREMENT PRIMARY KEY,
-    sale_date           DATE            NOT NULL,
-    product_no          VARCHAR(50)     NOT NULL,
-    product_name        VARCHAR(255),
-    category            VARCHAR(100),
-    brand               VARCHAR(150),
-    warehouse           VARCHAR(150),
-    store               VARCHAR(150),
-    sales_channel       VARCHAR(50)     COMMENT 'Retail or Wholesale',
-    refund_quantity     INT             DEFAULT 0,
-    refund_order_count  INT             DEFAULT 0,
-    net_sales_amount    DECIMAL(30,2),
-    net_sales_quantity  INT,
-    net_sales_cost      DECIMAL(30,2),
-    gross_profit        DECIMAL(30,2),
-    gross_margin_pct    DECIMAL(30,2)    COMMENT 'Percentage, e.g. 37.15',
-    loaded_at           TIMESTAMP       DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-
-    INDEX idx_sale_date   (sale_date),
-    INDEX idx_product_no  (product_no),
-    INDEX idx_warehouse   (warehouse),
-    INDEX idx_channel     (sales_channel)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
-
--- =============================================================
--- 4. STAGING: Stocks (inventory ledger)
--- =============================================================
-DROP TABLE IF EXISTS stg_stocks;
-
-CREATE TABLE stg_stocks (
-    id              BIGINT          AUTO_INCREMENT PRIMARY KEY,
-    product_no      VARCHAR(50)     NOT NULL,
-    product_name    VARCHAR(255),
-    category        VARCHAR(100),
-    brand           VARCHAR(150),
-    movement_type   VARCHAR(50)     COMMENT 'Opening Stock | Stock In | Store Transfer Out | Transfer | Delivery Out | Sales Return | Stock Out | Purchase Return | Other',
-    document_no     VARCHAR(100),
-    movement_date   DATE            NOT NULL,
-    warehouse       VARCHAR(150),
-    inbound_qty     INT             DEFAULT 0,
-    inbound_cost    DECIMAL(30,2)   DEFAULT 0.00,
-    outbound_qty    INT             DEFAULT 0,
-    outbound_cost   DECIMAL(30,2)   DEFAULT 0.00,
-    closing_qty     INT,
-    closing_cost    DECIMAL(30,2),
-    loaded_at       TIMESTAMP       DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-
-    INDEX idx_product_no    (product_no),
-    INDEX idx_movement_date (movement_date),
-    INDEX idx_warehouse     (warehouse),
-    INDEX idx_movement_type (movement_type)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+ 
+-- 1) Product master (from PRODUCT.xlsx)
+-- Grain: 1 row per Product No.
+-- Key columns for Power BI: Product No., Product Name, Tier 1 Category, Brand
+CREATE TABLE IF NOT EXISTS stg_product (
+    `Product Name`            VARCHAR(255),
+    `Product No.`             VARCHAR(50),
+    `Product Type`            VARCHAR(100),
+    `Tier 1 Category`         VARCHAR(100),
+    `Brand`                   VARCHAR(150),
+    `Wholesale Price`         DECIMAL(15,2),
+    `Retail Price`            DECIMAL(15,2),
+    `Online Price`            DECIMAL(15,2),
+    PRIMARY KEY (`Product No.`)
+);
+ 
+-- 2) Sales transactions (from SALES.xlsx)
+-- Grain: 1 row per sales line item
+-- Key columns: Date, Product NO., Tier 1 Category, Brand, Sales Channels,
+--              Net Sales Amount, Net Sales Quantity, Net Sales Gross Profit
+CREATE TABLE IF NOT EXISTS stg_sales (
+    `Date`                    DATE NULL,
+    `Product`                 VARCHAR(255),
+    `Product NO.`             VARCHAR(50),
+    `Product Type`            VARCHAR(100),
+    `Tier 1 Category`         VARCHAR(100),
+    `Brand`                   VARCHAR(150),
+    `Warehouse`               VARCHAR(150),
+    `Store`                   VARCHAR(150),
+    `Sales Channels`          VARCHAR(50),
+    `Refund Quantity`         DECIMAL(15,2),
+    `Refund Order Count`      INT,
+    `Net Sales Amount`        DECIMAL(15,2),
+    `Net Sales Quantity`      DECIMAL(15,2),
+    `Net Sales Cost`          DECIMAL(15,2),
+    `Net Sales Unit Price`    DECIMAL(15,2),
+    `Net Sales Unit Cost`     DECIMAL(15,2),
+    `Net Sales Gross Profit`  DECIMAL(15,2),
+    `Net Sales Gross Margin`  VARCHAR(20),
+    INDEX idx_sales_date (`Date`),
+    INDEX idx_sales_product (`Product NO.`),
+    INDEX idx_sales_brand (`Brand`)
+);
+ 
+-- 3) Stock balance, unpivoted (from STOCK_BALANCE.xlsx)
+-- Grain: 1 row per Product No. + Warehouse
+CREATE TABLE IF NOT EXISTS stg_stock_balance (
+    `Product No.`             VARCHAR(50),
+    `Product Name`            VARCHAR(255),
+    `SKU No.`                 VARCHAR(100),
+    `Tier 1 Category`         VARCHAR(100),
+    `Brand`                   VARCHAR(150),
+    `Unit of Measurement`     VARCHAR(50),
+    `Warehouse`               VARCHAR(150),
+    `Stock on Hand`           DECIMAL(15,2),
+    `Unit Cost`               DECIMAL(15,2),
+    `Inventory Asset Value`   DECIMAL(18,2),
+    INDEX idx_sb_product (`Product No.`),
+    INDEX idx_sb_warehouse (`Warehouse`),
+    INDEX idx_sb_brand (`Brand`)
+);
+ 
+-- 4) Stock movement log (from STOCK_BALANCE_DETAILS.xlsx)
+-- Grain: 1 row per movement transaction
+CREATE TABLE IF NOT EXISTS stg_stock_movement (
+    `Product No.`             VARCHAR(50),
+    `Product Name`            VARCHAR(255),
+    `SKU No.`                 VARCHAR(100),
+    `Tier 1 Category`         VARCHAR(100),
+    `Brand`                   VARCHAR(150),
+    `Unit of Measure`         VARCHAR(50),
+    `Type`                    VARCHAR(50),
+    `Document No.`            VARCHAR(100),
+    `Date`                    DATE NULL,
+    `Warehouse`               VARCHAR(150),
+    `Inbound-Quantity`        DECIMAL(15,2),
+    `Outbound-Quantity`       DECIMAL(15,2),
+    `Closing-Quantity`        DECIMAL(15,2),
+    `Closing-Cost`            DECIMAL(18,2),
+    INDEX idx_sm_product_wh (`Product No.`, `Warehouse`),
+    INDEX idx_sm_date (`Date`)
+);
+ 
+-- 5) Derived stock ageing (built by transform.build_stock_aging)
+-- Grain: 1 row per Product No. + Warehouse (same as stg_stock_balance)
+CREATE TABLE IF NOT EXISTS stg_stock_aging (
+    `Product No.`             VARCHAR(50),
+    `Product Name`            VARCHAR(255),
+    `Tier 1 Category`         VARCHAR(100),
+    `Brand`                   VARCHAR(150),
+    `Warehouse`               VARCHAR(150),
+    `Stock on Hand`           DECIMAL(15,2),
+    `Inventory Asset Value`   DECIMAL(18,2),
+    `Last Movement Date`      DATE NULL,
+    `Inventory Age Days`      INT NULL,
+    `Aging Bucket`            VARCHAR(30),
+    `Is Aged 45 Plus`         TINYINT(1),
+    INDEX idx_age_brand (`Brand`),
+    INDEX idx_age_bucket (`Aging Bucket`)
+);

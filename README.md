@@ -1,4 +1,4 @@
-﻿# Spectrum — Inventory Intelligence Pipeline
+﻿# Spectrum — Inventory Data Pipeline
 
 An end-to-end ETL pipeline that transforms raw retail inventory and sales data into a structured MySQL database with analytical views connected to Power BI dashboards.
 
@@ -51,7 +51,7 @@ DB_HOST=localhost
 DB_PORT=3306
 DB_USER=root
 DB_PASSWORD=your_password
-DB_NAME=spectrum_db
+DB_NAME=""
 \\\
 5. Add your three Excel files into the \data/\ folder
 \\\

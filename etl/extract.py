@@ -1,50 +1,52 @@
 """
-extract.py
-----------
-Copies the three source Excel files from a given folder into data/
-so the rest of the pipeline always reads from a single known location.
+etl/extract.py
+Reads the 4 raw Excel exports from data/raw/ and returns them as DataFrames.
+No cleaning happens here — that's transform.py's job. This step is purely
+"get the data into pandas, exactly as it is in the file."
+ 
+Expected files in data/raw/:
+    PRODUCT.xlsx
+    SALES.xlsx
+    STOCK_BALANCE.xlsx
+    STOCK_BALANCE_DETAILS.xlsx
 """
-
+ 
 import os
-import shutil
 import pandas as pd
-
-EXPECTED_FILES = {
-    "Products.xlsx": "Products.xlsx",
-    "Sales.xlsx":    "Sales.xlsx",
-    "Stocks.xlsx":   "Stocks.xlsx",
-}
-
-RAW_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
-
-
-def extract_files(source_folder: str) -> dict:
-    os.makedirs(RAW_DIR, exist_ok=True)
-    paths = {}
-
-    for source_name, dest_name in EXPECTED_FILES.items():
-        source_path = os.path.join(source_folder, source_name)
-        dest_path   = os.path.join(RAW_DIR, dest_name)
-
-        if not os.path.exists(source_path):
-            raise FileNotFoundError(
-                f"[EXTRACT] Could not find '{source_name}' in '{source_folder}'.\n"
-                f"  Expected: {source_path}\n"
-                f"  Please check your SOURCE_FOLDER in main.py."
-            )
-
-        shutil.copy2(source_path, dest_path)
-        table_key = source_name.replace(".xlsx", "").lower()
-        paths[table_key] = dest_path
-        print(f"[EXTRACT] {source_name} → {dest_path}")
-
-    return paths
-
-
-def read_raw(paths: dict) -> dict:
-    frames = {}
-    for key, path in paths.items():
-        df = pd.read_excel(path, dtype=str)
-        print(f"[EXTRACT] Loaded '{key}': {df.shape[0]:,} rows × {df.shape[1]} cols")
-        frames[key] = df
-    return frames
+ 
+RAW_DIR = os.path.join("data", "raw")
+ 
+ 
+def _read(filename: str) -> pd.DataFrame:
+    path = os.path.join(RAW_DIR, filename)
+    print(f"[extract] reading {path} ...")
+    df = pd.read_excel(path, sheet_name="Sheet1")
+    print(f"[extract]   -> {df.shape[0]:,} rows x {df.shape[1]} cols")
+    return df
+ 
+ 
+def extract_product() -> pd.DataFrame:
+    return _read("PRODUCT.xlsx")
+ 
+ 
+def extract_sales() -> pd.DataFrame:
+    return _read("SALES.xlsx")
+ 
+ 
+def extract_stock_balance() -> pd.DataFrame:
+    return _read("STOCK_BALANCE.xlsx")
+ 
+ 
+def extract_stock_balance_details() -> pd.DataFrame:
+    return _read("STOCK_BALANCE_DETAILS.xlsx")
+ 
+ 
+def extract_all() -> dict:
+    """Convenience helper used by main.py"""
+    return {
+        "product": extract_product(),
+        "sales": extract_sales(),
+        "stock_balance": extract_stock_balance(),
+        "stock_balance_details": extract_stock_balance_details(),
+    }
+ 
