@@ -269,4 +269,4 @@ fact_sales              fact_stock_aging
  
 **Rock Izuazu**
 Data Analyst | BI & Inventory Analytics
-[LinkedIn](https://linkedin.com/in/yourprofile) · [GitHub](https://github.com/yourusername)
+[LinkedIn](https://linkedin.com/in/Salvrezz)
