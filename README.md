@@ -1,106 +1,274 @@
-﻿# Spectrum — Inventory Data Pipeline
+# Inventory Analytics Platform & ETL Pipeline
+### Spectrum Innovation Technologies Ltd
 
-An end-to-end ETL pipeline that transforms raw retail inventory and sales data into a structured MySQL database with analytical views connected to Power BI dashboards.
+A production Python ETL pipeline and Power BI reporting suite that integrates product, sales and stock movement data from the Kilimax ERP system into a MySQL data warehouse, powering 8 executive and operational dashboards used by leadership to drive inventory and sales decisions.
 
-## What it does
+---
 
-Processes 283,393 rows across three Excel source files — products, sales, and stock movements — cleans and restructures them into MySQL staging tables, and exposes 14 analytical SQL views covering inventory health, sales performance, procurement alerts, and stock velocity.
+## Project Overview
 
-## Tech stack
+Before this pipeline existed, reconciling stock and sales data across the business was a manual, error prone process. This project automates the full data lifecycle from raw ERP exports to interactive Power BI dashboards, tracking inventory ageing, slow moving stock, sales channel performance and restock signals across 1,869 SKUs and 76 warehouses.
 
-- Python 3.x — ETL pipeline
-- pandas — data cleaning and transformation
-- SQLAlchemy + pymysql — database connection and loading
-- MySQL — staging tables and analytical views
-- Power BI — dashboard layer connected to views
+---
 
-## Project structure
+## Key Results
 
-\\\
+- Processes **283,398 records** across 4 source systems with zero record loss
+- Tracks **1,869 SKUs** across **76 warehouses** in a single unified data model
+- Flags stock idle for **45+ days** and brands with **≥10% slow moving inventory**
+- Delivers **8 Power BI dashboards** used directly in COO level business reviews
+- Eliminates manual stock and sales reconciliation through automated ETL
+
+---
+
+## Tech Stack
+
+| Layer | Tools |
+|---|---|
+| Data Source | Kilimax ERP (Excel exports) |
+| Language | Python 3.11+ |
+| Data Processing | Pandas, NumPy |
+| Database | MySQL (spectrum_db) |
+| ORM / Connector | SQLAlchemy, PyMySQL |
+| BI & Reporting | Power BI Desktop (DAX, Power Query) |
+| Version Control | Git, GitHub |
+| IDE | VS Code |
+
+---
+
+## Project Structure
+
+```
 spectrum/
-├── .env                    # DB credentials (not tracked)
-├── data/                   # Raw and processed files (not tracked)
+├── .env                        # DB credentials (not tracked)
+├── data/
+│   ├── raw/                    # Source Excel exports from Kilimax ERP
+│   └── processed/              # Optional CSV snapshots (not tracked)
 ├── db/
-│   └── connection.py       # SQLAlchemy engine
+│   └── connection.py           # SQLAlchemy engine
 ├── etl/
-│   ├── extract.py          # Read source Excel files
-│   ├── transform.py        # Clean and reshape data
-│   └── load.py             # Load to MySQL and refresh views
+│   ├── extract.py              # Read source Excel files
+│   ├── transform.py            # Clean, reshape and build aging table
+│   └── load.py                 # Load to MySQL
 ├── sql/
-│   ├── create_tables.sql   # Staging table DDL
-│   └── views/              # 14 analytical SQL views
-├── main.py                 # Pipeline orchestrator
+│   └── create_tables.sql       # Staging table DDL (documentation)
+├── main.py                     # Pipeline orchestrator
 └── requirements.txt
-\\\
+```
 
-## Setup
+---
 
-1. Clone the repository
-2. Create and activate a virtual environment
-\\\ash
+## Data Pipeline
+
+```
+Kilimax ERP (Excel)
+        │
+        ▼
+   [ extract.py ]
+   Read 4 raw files
+        │
+        ▼
+  [ transform.py ]
+  Clean & reshape
+  Blank handling
+  Wide to long unpivot (76 warehouses)
+  Build inventory aging table
+        │
+        ▼
+   [ load.py ]
+   Write 5 tables to MySQL
+        │
+        ▼
+   spectrum_db (MySQL)
+        │
+        ▼
+   Power BI Dashboards
+```
+
+### Staging Tables
+
+| Table | Source | Rows | Description |
+|---|---|---|---|
+| stg_product | PRODUCT.xlsx | 1,869 | Product master from ERP |
+| stg_sales | SALES.xlsx | 89,488 | Sales transactions by channel |
+| stg_stock_balance | STOCK_BALANCE.xlsx | 136,496 | Stock on hand per SKU per warehouse |
+| stg_stock_movement | STOCK_BALANCE_DETAILS.xlsx | 198,089 | Full movement log (in/out/transfer) |
+| stg_stock_aging | Derived | 136,496 | Aging days, buckets and slow moving flags |
+
+---
+
+## Inventory Ageing Framework
+
+Stock ageing is computed per SKU per warehouse using:
+
+```
+Inventory Age (Days) = Run Date − Last Movement Date
+```
+
+Where Last Movement Date is the most recent transaction date across all movement types (Opening Stock, Receive Stock, Transfer Stock, Store Orders, Deliveries) from stg_stock_movement.
+
+Items are then segmented into ageing buckets:
+
+| Bucket | Days |
+|---|---|
+| Healthy | 0 to 15 days |
+| Watch | 16 to 30 days |
+| Review | 31 to 45 days |
+| Slow Moving | 46 to 60 days |
+| Critical | 61 to 90 days |
+| Dead Stock | 90+ days |
+| No Movement Data | No transaction history found |
+
+A brand level slow moving ratio flags any brand where 10% or more of its stocked SKUs are aged 45+ days.
+
+```
+Slow Moving Ratio % = SKUs Aged 45+ Days / Total SKUs In Stock
+```
+
+---
+
+## Power BI Dashboards (8 Pages)
+
+| Page | Description |
+|---|---|
+| Executive Dashboard | Business wide KPIs, inventory value, sales trend, brand health |
+| Sales Performance | Net sales, gross margin, channel split (Wholesale vs Retail) |
+| Oraimo Dashboard | Full Oraimo sub brand analytics, ageing table, channel performance |
+| Phones Dashboard | Brand grouped phone inventory and sales (iPhone, Samsung, Tecno etc.) |
+| Solar Products | Itel Solar, Villaon and other solar category stock and sales |
+| Accessories | Non Oraimo accessories inventory health and ageing |
+| Inventory Health | Overstocked vs restock needed, days of cover per brand |
+| Management Alert | Business wide 45 day flag view, excludes Oraimo (has its own page) |
+
+---
+
+## Blank Handling Rules
+
+No rows are dropped at any stage of the pipeline. Every blank field receives an explicit visible placeholder:
+
+| Field | Rule |
+|---|---|
+| Brand (under Oraimo category) | Replaced with "ORAIMO" |
+| Brand (other categories) | Replaced with "CATEGORY NAME - UNBRANDED" |
+| Product No. | Replaced with "UNSPECIFIED-{row index}" |
+| Tier 1 Category | Replaced with "UNCATEGORISED" |
+| Date (unparseable) | Kept as NULL, displays as blank in Power BI |
+| Movement Type | Replaced with "UNSPECIFIED MOVEMENT" |
+
+---
+
+## Setup & Usage
+
+### Prerequisites
+
+- Python 3.11+
+- MySQL 8.0+ with spectrum_db database created
+- Power BI Desktop
+
+### Installation
+
+```bash
+# Clone the repo
+git clone https://github.com/yourusername/spectrum.git
+cd spectrum
+
+# Create and activate virtual environment
 python -m venv .venv
-.venv\Scripts\activate
-\\\
-3. Install dependencies
-\\\ash
+.venv\Scripts\activate        # Windows
+source .venv/bin/activate     # Mac/Linux
+
+# Install dependencies
 pip install -r requirements.txt
-\\\
-4. Create a \.env\ file in the root folder with your MySQL credentials
-\\\
-DB_HOST=localhost
-DB_PORT=3306
+```
+
+### Environment Setup
+
+```bash
+# Copy the example env file and fill in your MySQL credentials
+copy .env.example .env
+```
+
+```env
 DB_USER=root
 DB_PASSWORD=your_password
-DB_NAME=""
-\\\
-5. Add your three Excel files into the \data/\ folder
-\\\
-data/
-├── Products.xlsx
-├── Sales.xlsx
-└── Stocks.xlsx
-\\\
+DB_HOST=localhost
+DB_PORT=3306
+DB_NAME=spectrum_db
+```
 
-## Running the pipeline
+### Database Setup (once only)
 
-Create database tables (run once):
-\\\ash
-python main.py --setup
-\\\
+```sql
+CREATE DATABASE IF NOT EXISTS spectrum_db;
+SET GLOBAL local_infile = 1;
+```
 
-Run the full pipeline:
-\\\ash
+### Run the Pipeline
+
+```bash
+# Place your 4 raw Excel files in data/raw/ then run:
 python main.py
-\\\
+```
 
-Refresh views only (without reloading data):
-\\\ash
-python main.py --views-only
-\\\
+Expected output:
 
-## Analytical views
+```
+=== Spectrum ETL run — ageing calculated as of 2026-06-11 ===
 
-| View | Purpose |
-|---|---|
-| v_product_master | Clean product dimension table |
-| v_stock_levels | Current stock quantity per product per warehouse |
-| v_days_in_stock | Days on shelf with age bucket classification |
-| v_low_stock_alert | Products with 7, 14, and 30 day stock cover alerts |
-| v_fast_movers | High velocity products with reorder flags |
-| v_slow_movers | Dead stock and capital at risk |
-| v_sales_performance | Transaction-level sales KPIs |
-| v_kpi_summary | Headline metrics for dashboard cards |
-| v_kpi_revenue_trend | Daily and monthly revenue trends |
-| v_kpi_category_brand | Performance by category and brand |
-| v_kpi_warehouse | Revenue and stock health by location |
-| v_kpi_stock_health | Capital at risk by age bucket |
-| v_kpi_channel_split | Retail vs wholesale comparison |
-| v_kpi_top_products | Product rankings with reorder intelligence |
+--- STEP 1: EXTRACT ---
+[extract] reading data\raw\PRODUCT.xlsx ...
+[extract]   -> 1,869 rows x 30 cols
+...
 
-## Power BI
+--- STEP 2: TRANSFORM ---
+[transform] stg_stock_aging: 136,496 rows x 11 cols
+...
 
-Connect Power BI to MySQL using localhost and spectrum_db. Import only the views — never the stg_ staging tables directly. The dashboard covers five pages: executive overview, sales performance, inventory health, procurement alerts, and product deep dive.
+--- STEP 3: LOAD ---
+[load] writing stg_sales (89,488 rows x 18 cols) ...
+[load]   -> done: stg_sales
+...
 
-## Refreshing data
+=== ETL complete. Refresh Power BI to pick up the new data. ===
+```
 
-Drop new Excel files into the \data/\ folder and run \python main.py\. The pipeline truncates and reloads all tables and refreshes all views automatically.
+### Refresh Power BI
+
+After `python main.py` completes, open your Power BI file and click **Home → Refresh**. All 8 dashboards update automatically with the new data.
+
+---
+
+## Data Model (Power BI Star Schema)
+
+```
+              dim_date
+                 │
+    ┌────────────┼────────────┐
+    │                         │
+fact_sales              fact_stock_aging
+    │                         │
+    └────────────┬────────────┘
+                 │
+         dim_brand   dim_warehouse   dim_category
+```
+
+---
+
+## Skills Demonstrated
+
+- ETL pipeline development (Extract, Transform, Load)
+- Data warehouse design and MySQL schema management
+- Data cleaning, blank handling and data quality engineering
+- Inventory analytics and ageing metric design
+- Power BI data modeling (star schema, DAX measures, Power Query)
+- ERP data integration (Kilimax)
+- Business intelligence and executive dashboard delivery
+- Supply chain and retail/wholesale analytics
+
+---
+
+## Author
+
+**Rock Izuazu**
+Data Analyst | BI & Inventory Analytics
+[LinkedIn](https://linkedin.com/in/yourprofile) · [GitHub](https://github.com/yourusername)
